@@ -4,11 +4,381 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pracovní kalendář</title>
-<link rel="manifest" href="manifest.json">
+<style>
+body { font-family: Arial, sans-serif; margin:20px; background:#121212; color:#eee; }
+h1 { text-align:center; color:#fff; }
+
+/* Controls */
+.controls { display:flex; flex-wrap:wrap; justify-content:center; gap:5px; margin-bottom:10px; }
+.controls button { padding:8px 12px; border-radius:5px; cursor:pointer; color:#fff; font-weight:bold; border:none; transition:0.2s; }
+.controls button:hover { filter: brightness(1.2); }
+.controls button#prevMonth, .controls button#nextMonth { background:#000; font-size:14px; border:1px solid #333; }
+.controls button#undoSegment { background:#ff9800; }
+
+/* Kalendář */
+.calendar { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
+.day { 
+  position:relative; display:flex; flex-direction:column; overflow:hidden; 
+  cursor:pointer; transition:0.2s; border-radius:5px; 
+  background:#1e1e1e; padding:5px; min-width:45px; min-height:60px;
+}
+.day:hover { background:#2a2a2a; }
+.day.selected { border: 2px solid #ffeb3b; background-color: #333; }
+.day.has-both { border: 2px solid #ff5722; background-color: #2a1e1e; }
+
+.header { font-weight:bold; background:#333; text-align:center; display:flex; align-items:center; justify-content:center; }
+.day-number { font-size:18px; font-weight:bold; color:#ccc; position:absolute; top:5px; left:5px; }
+.today { border:2px solid #ffeb3b; background:#2a2a1a; }
+.today-icon { position:absolute; top:5px; right:5px; font-size:16px; color:#ffeb3b; }
+.important-icon { position:absolute; top:5px; right:5px; font-size:14px; color:red; }
+
+/* Segmenty uvnitř dne */
+.multi-bg {
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  margin-top:20px; /* prostor pro číslo dne */
+  overflow-y:auto;
+  max-height:150px;
+}
+.multi-segment {
+  width:100%;
+  padding:4px 2px;
+  border-radius:4px;
+  color:#fff;
+  font-size:12px;
+  font-weight:bold;
+  text-align:center;
+  box-sizing:border-box;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* Poznámky */
+.note {
+  font-size:11px;
+  color:#fff;
+  border-radius:3px;
+  padding:2px 3px;
+  width:100%;
+  box-sizing:border-box;
+  overflow-wrap:break-word;
+  cursor:pointer;
+  text-align:center;
+  margin-top:3px;
+  background:#444;
+}
+.note.important { border:2px solid red; }
+
+/* Popup */
+#popupOverlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:1000; }
+#popup { background:#1e1e1e; padding:20px; border-radius:10px; width:300px; max-width:90%; color:#eee; display:flex; flex-direction:column; gap:10px; }
+#popup h2 { margin:0; text-align:center; }
+#popup textarea { width:100%; height:60px; border-radius:5px; background:#333; color:#fff; border:none; padding:5px; resize:none; }
+#popup .segments { display:flex; flex-direction:column; gap:5px; max-height:150px; overflow-y:auto; }
+#popup .segments button { flex:1; padding:5px; border-radius:5px; border:none; cursor:pointer; font-weight:bold; color:#fff; display:flex; justify-content:space-between; align-items:center; }
+#popup .segments button span.deleteSeg { margin-left:5px; cursor:pointer; color:#000; font-weight:bold; background:#ffeb3b; border-radius:50%; padding:0 5px; }
+#popup .addSegments { display:flex; flex-wrap:wrap; gap:5px; justify-content:center; }
+#popup .addSegments button { flex:1 1 30%; padding:5px; border-radius:5px; border:none; cursor:pointer; font-weight:bold; color:#fff; }
+#popup .importantToggle { display:flex; align-items:center; gap:5px; cursor:pointer; font-weight:bold; }
+#popup .actions { display:flex; justify-content:space-between; margin-top:10px; flex-wrap:wrap; gap:5px; }
+#popup .actions button { padding:5px 10px; border-radius:5px; border:none; cursor:pointer; font-weight:bold; }
+
+@media (max-width:600px){
+  .day-number { font-size:14px; }
+  .multi-segment { font-size:11px; padding:2px 0; }
+}
+</style>
 </head>
 <body>
-<h1>Pracovní kalendář PWA</h1>
-<p>Kalendář připraven k použití. Přidej zde svůj JavaScript a CSS.</p>
-<script src="calendar.js"></script>
+
+<h1>Pracovní kalendář</h1>
+
+<div class="controls">
+  <button id="prevMonth">&lt; Předchozí</button>
+  <span id="monthYear" style="align-self:center; margin:0 10px;"></span>
+  <button id="nextMonth">Další &gt;</button>
+  <button id="undoSegment">Obnovit poslední segment</button>
+</div>
+
+<div class="calendar" id="calendar"></div>
+
+<!-- Popup -->
+<div id="popupOverlay">
+  <div id="popup">
+    <h2 id="popupDate">Datum</h2>
+    <div class="segments" id="currentSegments"></div>
+    <div class="addSegments">
+      <button class="prace" style="background:#e53935;">Práce</button>
+      <button class="volno" style="background:#43a047;">Volno</button>
+      <button class="dovolena" style="background:#1976d2;">Dovolená</button>
+      <button class="lekar" style="background:#ffb300;">Lékař</button>
+      <button class="narozeniny" style="background:#9c27b0;">Narozeniny</button>
+      <button class="ruzna" style="background:#9e9e9e;">Různé</button>
+    </div>
+    <label class="importantToggle"><input type="checkbox" id="importantCheckbox"> Důležitý</label>
+    <textarea id="noteInput" placeholder="Poznámka..."></textarea>
+    <div class="actions">
+      <button id="saveBtn" style="background:#4caf50;">Uložit</button>
+      <button id="deleteNoteBtn" style="background:#ff9800;">Smazat poznámku</button>
+      <button id="closeBtn" style="background:#f44336;">Zavřít</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const calendar = document.getElementById('calendar');
+const monthYear = document.getElementById('monthYear');
+const popupOverlay = document.getElementById('popupOverlay');
+const popupDate = document.getElementById('popupDate');
+const noteInput = document.getElementById('noteInput');
+const importantCheckbox = document.getElementById('importantCheckbox');
+const saveBtn = document.getElementById('saveBtn');
+const deleteNoteBtn = document.getElementById('deleteNoteBtn');
+const closeBtn = document.getElementById('closeBtn');
+const currentSegments = document.getElementById('currentSegments');
+const addSegmentButtons = document.querySelectorAll('#popup .addSegments button');
+
+let date = new Date();
+let selectedDayKey = null;
+let lastDeletedSegment = null;
+let selectedDays = [];
+let isSelecting = false;
+
+const stateColors = { 
+  prace:'#e53935', volno:'#43a047', dovolena:'#1976d2', 
+  lekar:'#ffb300', narozeniny:'#9c27b0', ruzna:'#9e9e9e' 
+};
+
+// LocalStorage
+function saveState(key,value){ localStorage.setItem(key, JSON.stringify(value)); }
+function getState(key){ 
+  const val=localStorage.getItem(key); 
+  try { 
+    const parsed = val ? JSON.parse(val) : {states:[], note:'', important:false}; 
+    if(!parsed.states) parsed.states=[]; 
+    return parsed; 
+  } catch(e){ 
+    return {states:[], note:'', important:false}; 
+  } 
+}
+
+function formatDate(key) {
+  const [y,m,d] = key.split('-');
+  return new Date(y, m-1, d).toLocaleDateString('cs-CZ', { day:'numeric', month:'long', year:'numeric' });
+}
+
+function renderCalendar(){
+  calendar.innerHTML='';
+  const year = date.getFullYear(), month = date.getMonth();
+  monthYear.textContent = date.toLocaleString('cs-CZ',{month:'long', year:'numeric'});
+  const firstDay = (new Date(year, month, 1).getDay()+6)%7;
+  const daysInMonth = new Date(year, month+1,0).getDate();
+
+  ['Po','Út','St','Čt','Pá','So','Ne'].forEach(h=>{
+    const header = document.createElement('div'); header.className='day header'; header.textContent=h; calendar.appendChild(header);
+  });
+
+  for(let i=0;i<firstDay;i++){ const empty=document.createElement('div'); empty.className='day'; calendar.appendChild(empty); }
+
+  for(let d=1; d<=daysInMonth; d++){
+    const day=document.createElement('div'); day.className='day';
+    const key=`${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    day.dataset.key = key;
+    calendar.appendChild(day);
+    renderDay(key);
+  }
+}
+
+function renderDay(key){
+  const dayDiv = document.querySelector(`.day[data-key='${key}']`);
+  if(!dayDiv) return;
+  const dayData = getState(key);
+  dayDiv.innerHTML='';
+
+  const d = Number(key.split('-')[2]);
+  const dayNum = document.createElement('div'); dayNum.className='day-number'; dayNum.textContent=d;
+  dayDiv.appendChild(dayNum);
+
+  if(dayData.important){
+    const impIcon = document.createElement('div'); impIcon.className='important-icon'; impIcon.textContent='⚠️';
+    dayDiv.appendChild(impIcon);
+  }
+
+  const hasSegments = dayData.states && dayData.states.length>0;
+  const hasNote = dayData.note && dayData.note.trim() !== '';
+
+  if(hasSegments){
+    const bg = document.createElement('div'); 
+    bg.className='multi-bg';
+    dayData.states.forEach(s=>{
+      const seg = document.createElement('div'); 
+      seg.className='multi-segment';
+      seg.style.backgroundColor = stateColors[s] || '#333';
+      seg.textContent = s;
+      bg.appendChild(seg);
+    });
+    dayDiv.appendChild(bg);
+  }
+
+if(hasNote){
+  const noteDiv = document.createElement('div'); 
+  noteDiv.className='note'; 
+  noteDiv.textContent = dayData.note;
+  if(dayData.important) noteDiv.classList.add('important');
+  // Poznámka má neutrální barvu, žádné přebarvování
+  dayDiv.appendChild(noteDiv);
+}
+
+
+  dayDiv.classList.remove('has-both');
+  if(hasSegments && hasNote) dayDiv.classList.add('has-both');
+
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  if(key===todayKey){
+    dayDiv.classList.add('today');
+    const todayIcon = document.createElement('div'); 
+    todayIcon.className='today-icon'; 
+    todayIcon.textContent='📍';
+    dayDiv.appendChild(todayIcon);
+  }
+
+  if(selectedDays.includes(key)) dayDiv.classList.add('selected');
+}
+
+// Drag select pro více dní
+calendar.addEventListener('mousedown', e => {
+  if(!e.target.classList.contains('day') || e.target.classList.contains('header')) return;
+  isSelecting = true;
+  selectedDays = [];
+  toggleDaySelection(e.target);
+});
+calendar.addEventListener('mouseover', e => {
+  if(!isSelecting) return;
+  if(!e.target.classList.contains('day') || e.target.classList.contains('header')) return;
+  toggleDaySelection(e.target);
+});
+document.addEventListener('mouseup', e => {
+  if(isSelecting) {
+    isSelecting = false;
+    if(selectedDays.length > 0) {
+      selectedDayKey = selectedDays[selectedDays.length - 1];
+      openPopup(getState(selectedDayKey));
+    }
+  }
+});
+function toggleDaySelection(dayDiv){
+  const key = dayDiv.dataset.key;
+  if(!key) return;
+  if(!selectedDays.includes(key)) {
+    selectedDays.push(key);
+    dayDiv.classList.add('selected');
+  }
+}
+
+// Popup
+function openPopup(dayData){
+  popupOverlay.style.display='flex';
+  popupDate.textContent = formatDate(selectedDayKey);
+  noteInput.value = dayData.note || '';
+  importantCheckbox.checked = dayData.important || false;
+  renderCurrentSegments(dayData);
+}
+function closePopup(){ 
+  popupOverlay.style.display='none'; 
+  selectedDayKey=null; 
+  selectedDays=[]; 
+  renderCalendar(); 
+}
+function renderCurrentSegments(dayData){
+  currentSegments.innerHTML='';
+  if(dayData.states){
+    dayData.states.forEach((s,index)=>{
+      const btn = document.createElement('button');
+      btn.style.backgroundColor = stateColors[s] || '#333';
+      btn.textContent = s;
+      const del = document.createElement('span'); del.textContent='❌'; del.className='deleteSeg';
+      del.addEventListener('click',(e)=>{
+        e.stopPropagation();
+        if(dayData.important && !confirm('Tento segment je důležitý. Opravdu smazat?')) return;
+        lastDeletedSegment = { key:selectedDayKey,index,state:s,important:dayData.important };
+        dayData.states.splice(index,1);
+        saveState(selectedDayKey,dayData);
+        renderDay(selectedDayKey);
+        renderCurrentSegments(dayData);
+      });
+      btn.appendChild(del);
+      currentSegments.appendChild(btn);
+    });
+  }
+}
+
+// Přidání segmentu na všechny vybrané dny
+addSegmentButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const state = btn.className;
+    if(selectedDays.length === 0) return;
+    selectedDays.forEach(key=>{
+      const dayData = getState(key);
+      if(!dayData.states.includes(state)) dayData.states.push(state);
+      saveState(key, dayData);
+      renderDay(key);
+    });
+    if(selectedDayKey) renderCurrentSegments(getState(selectedDayKey));
+  });
+});
+
+// Uložit poznámku pro všechny vybrané dny
+saveBtn.addEventListener('click', ()=>{
+  if(selectedDays.length === 0) return;
+  selectedDays.forEach(key=>{
+    const dayData = getState(key);
+    dayData.note = noteInput.value;
+    dayData.important = importantCheckbox.checked;
+    saveState(key, dayData);
+    renderDay(key);
+  });
+  noteInput.value='';
+  closePopup();
+});
+
+// Smazat poznámku pro všechny vybrané dny
+deleteNoteBtn.addEventListener('click', ()=>{
+  if(selectedDays.length === 0) return;
+  selectedDays.forEach(key=>{
+    const dayData = getState(key);
+    dayData.note = '';
+    dayData.important = false;
+    saveState(key, dayData);
+    renderDay(key);
+  });
+  noteInput.value='';
+});
+
+// Zavřít popup
+closeBtn.addEventListener('click', closePopup);
+
+// Navigace měsíců
+document.getElementById('prevMonth').addEventListener('click', ()=>{ date.setMonth(date.getMonth()-1); renderCalendar(); });
+document.getElementById('nextMonth').addEventListener('click', ()=>{ date.setMonth(date.getMonth()+1); renderCalendar(); });
+
+// Obnovit poslední segment
+document.getElementById('undoSegment').addEventListener('click', ()=>{
+  if(!lastDeletedSegment) return;
+  const { key,index,state,important } = lastDeletedSegment;
+  const dayData = getState(key);
+  if(!dayData.states) dayData.states = [];
+  dayData.states.splice(index,0,state);
+  dayData.important = important;
+  saveState(key,dayData);
+  renderDay(key);
+  lastDeletedSegment = null;
+});
+
+renderCalendar();
+</script>
+
 </body>
 </html>
