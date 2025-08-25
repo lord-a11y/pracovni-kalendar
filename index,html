@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pracovní kalendář</title>
+<link rel="stylesheet" href="calendar.css">
+</head>
+<body>
+
+<h1>Pracovní kalendář</h1>
+
+<div class="controls">
+  <button id="prevMonth">&lt; Předchozí</button>
+  <span id="monthYear" style="align-self:center; margin:0 10px;"></span>
+  <button id="nextMonth">Další &gt;</button>
+  <button id="undoSegment">Obnovit poslední segment</button>
+</div>
+
+<div class="calendar" id="calendar"></div>
+
+<!-- Popup -->
+<div id="popupOverlay">
+  <div id="popup">
+    <h2 id="popupDate">Datum</h2>
+    <div class="segments" id="currentSegments"></div>
+    <div class="addSegments">
+      <button class="prace" style="background:#e53935;">Práce</button>
+      <button class="volno" style="background:#43a047;">Volno</button>
+      <button class="dovolena" style="background:#1976d2;">Dovolená</button>
+      <button class="lekar" style="background:#ffb300;">Lékař</button>
+      <button class="narozeniny" style="background:#9c27b0;">Narozeniny</button>
+      <button class="ruzna" style="background:#9e9e9e;">Různé</button>
+    </div>
+    <label class="importantToggle"><input type="checkbox" id="importantCheckbox"> Důležitý</label>
+    <textarea id="noteInput" placeholder="Poznámka..."></textarea>
+    <div class="actions">
+      <button id="saveBtn" style="background:#4caf50;">Uložit</button>
+      <button id="deleteNoteBtn" style="background:#ff9800;">Smazat poznámku</button>
+      <button id="closeBtn" style="background:#f44336;">Zavřít</button>
+    </div>
+  </div>
+</div>
+
+<script src="calendar.js"></script>
+</body>
+</html>
